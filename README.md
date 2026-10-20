@@ -1,2 +1,0 @@
-# freeland
-no limits
