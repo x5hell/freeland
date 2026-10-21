@@ -216,34 +216,49 @@ const stopPolling = () => { if (state.pollTimer) clearInterval(state.pollTimer);
 function startPlayback() {
   const pl = $("#player");
   if (!pl || !state.sid) return;
-  $("#p-overlay").hidden = true;
-  const m3u8 = `/api/hls/${state.currentVideo}/playlist.m3u8?sid=${state.sid}`;
+  const st = $("#p-status");
+  // оверлей держим до готовности манифеста: холодный резолв на сервере
+  // занимает 10-25с (yt-dlp), дефолтный таймаут hls.js (10с) рвёт загрузку
+  st.textContent = "Получаем поток (до 30с)…";
   const fail = (msg) => {
-    const st = $("#p-status");
-    if (!st) return;
     $("#p-overlay").hidden = false;
-    st.textContent = msg;
+    if (st) st.textContent = msg;
   };
+  const m3u8 = `/api/hls/${state.currentVideo}/playlist.m3u8?sid=${state.sid}`;
+  let retries = 0;
   // стрим = HLS; hls.js для MSE, нативный HLS для Safari/iOS
   if (pl.canPlayType("application/vnd.apple.mpegurl")) {
     pl.src = m3u8;
+    pl.addEventListener("loadedmetadata", () => { $("#p-overlay").hidden = true; }, { once: true });
     pl.play().catch(() => {});
   } else if (window.Hls?.isSupported()) {
-    state.hls = new Hls({ maxBufferLength: 30, backBufferLength: 30 });
+    state.hls = new Hls({
+      maxBufferLength: 30, backBufferLength: 30,
+      // холодный резолв на origin долог — таймауты щедрые + ретраи
+      manifestLoadingTimeOut: 60000, manifestLoadingMaxRetry: 4,
+      manifestLoadingRetryDelay: 2000,
+      fragLoadingTimeOut: 60000, fragLoadingMaxRetry: 6,
+      fragLoadingRetryDelay: 1000,
+    });
+    state.hls.on(Hls.Events.MANIFEST_PARSED, () => {
+      $("#p-overlay").hidden = true;
+      pl.play().catch(() => {});
+    });
     state.hls.on(Hls.Events.ERROR, (_e, d) => {
       if (!d.fatal) return;
-      if (d.type === Hls.ErrorTypes.NETWORK_ERROR && d.details === Hls.ErrorDetails.MANIFEST_LOAD_ERROR) {
-        fail("Не удалось получить поток, попробуйте позже");
+      if (d.type === Hls.ErrorTypes.NETWORK_ERROR && retries < 6) {
+        retries++;
+        $("#p-overlay").hidden = false;
+        st.textContent = `Получаем поток (попытка ${retries})…`;
+        setTimeout(() => state.hls?.startLoad(), 1500);
       } else if (d.type === Hls.ErrorTypes.NETWORK_ERROR) {
-        // сегмент не пришёл (таймаут ffmpeg) — мягкий старт заново
-        state.hls?.startLoad();
+        fail("Не удалось получить поток, попробуйте позже");
       } else {
         fail("Ошибка воспроизведения, попробуйте позже");
       }
     });
     state.hls.loadSource(m3u8);
     state.hls.attachMedia(pl);
-    pl.play().catch(() => {});
   } else {
     fail("Браузер не поддерживает HLS");
   }
