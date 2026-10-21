@@ -226,12 +226,11 @@ function startPlayback() {
   };
   const m3u8 = `/api/hls/${state.currentVideo}/playlist.m3u8?sid=${state.sid}`;
   let retries = 0;
-  // стрим = HLS; hls.js для MSE, нативный HLS для Safari/iOS
-  if (pl.canPlayType("application/vnd.apple.mpegurl")) {
-    pl.src = m3u8;
-    pl.addEventListener("loadedmetadata", () => { $("#p-overlay").hidden = true; }, { once: true });
-    pl.play().catch(() => {});
-  } else if (window.Hls?.isSupported()) {
+  // стрим = HLS. Приоритет hls.js: Chrome 155 отвечает canPlayType truthy
+  // на apple-mpegurl, но с preload=none+autoplay-блоком ресурс не грузится
+  // вовсе (готов вечно «Получаем поток»). Нативный HLS — фолбэк (Safari),
+  // с preload=auto и ожиданием loadedmetadata.
+  if (window.Hls?.isSupported()) {
     state.hls = new Hls({
       maxBufferLength: 30, backBufferLength: 30,
       // холодный резолв на origin долог — таймауты щедрые + ретраи
@@ -259,6 +258,11 @@ function startPlayback() {
     });
     state.hls.loadSource(m3u8);
     state.hls.attachMedia(pl);
+  } else if (pl.canPlayType("application/vnd.apple.mpegurl")) {
+    pl.preload = "auto";
+    pl.src = m3u8;
+    pl.addEventListener("loadedmetadata", () => { $("#p-overlay").hidden = true; }, { once: true });
+    pl.play().catch(() => {});
   } else {
     fail("Браузер не поддерживает HLS");
   }
