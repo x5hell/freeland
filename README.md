@@ -1,29 +1,17 @@
-# y2be — зеркало YouTube (клиентская часть)
+# y2be — зеркало YouTube (лицо)
 
-Видимая клиенту часть: статический SPA (vanilla JS + hls.js) и serverless-прокси
-на origin. Развёрнуто на Vercel (Hobby) из этого репозитория автодеплоем.
+Клиентская часть: статический SPA (vanilla JS + hls.js с jsDelivr CDN)
++ прокси /api и /img на origin через netlify.toml redirects (status=200).
 
-## Переменные окружения (Vercel → Settings → Environment Variables)
+Домен-лицо: https://fancy-boba-e4c743.netlify.app (Netlify, автодеплой
+из этого репо). Прежнее лицо — Vercel (freeland-indol) заблокирован
+DPI из РФ; netlify.app троттлится мигающим детектом — потому hls.js
+вынесен на jsDelivr (проверено 1.6-3.7 МБ/с сквозь DPI).
 
-| Переменная       | Значение                          |
-|------------------|-----------------------------------|
-| `ORIGIN_URL`     | `https://y2be.duckdns.org`        |
-| `ORIGIN_SECRET`  | shared secret (см. `/etc/ytmirror.env` на origin) |
+Origin в браузере клиента не светится: все запросы идут через этот
+домен (redirects status=200), /admin наружу не проксируется.
 
-После добавления переменных — Redeploy (последний деплой из GitHub).
-
-## Что здесь
-
-- `index.html`, `style.css`, `app.js` — SPA (лента, поиск, watch с HLS-плеером)
-- `hls.js` — hls.js 1.5.20 (cdnjs, Apache-2.0)
-- `api/proxy.js` — единственная функция: `/api/*`, `/img/*` → origin с
-  `X-Origin-Secret`; 3xx от origin не транслируются
-- `vercel.json` — rewrites `/api/:path*`, `/img/:path*` → `/api/proxy`;
-  картинки кэшируются 6ч
-
-## Ограничения
-
-- Лимиты Hobby: функции ≤300с, ~100ГБ/мес fair-use — сегменты по ~0.4МБ и
-  JSON проходят с запасом
-- Админка и служебные эндпоинты живут только на origin и через прокси
-  не ходят
+## Переменные окружения
+Не требуются: origin работает в открытом режиме для /api и /img
+(см. app.py origin_guard). При возврате shared-secret добавить
+заголовок в netlify.toml redirects.
